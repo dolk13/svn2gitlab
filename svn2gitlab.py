@@ -4,23 +4,37 @@ import sys, getopt, tempfile, os
 import subprocess
 import time
 import gitlab
+from urllib.parse import urlparse
 
+def PrintUsage():
+    print('Usage ./svn2gitlab.py -i <svn repo> -o <git path> -k <gitlab api key>')
 
-def PrintInfo():
-    print('Hello, world!')
+def ParseGitlabRepo(fullUrl):
+    group = ''
+    apiUrl = ''
+    project = ''
+    parsedUrl = urlparse(fullUrl)
+    apiUrl = parsedUrl.scheme + "://"+ parsedUrl.netloc
+    group = os.path.dirname(parsedUrl.path)[1:]
+    project = os.path.basename(parsedUrl.path)
+    print(apiUrl)
+    print(group)
+    print(project)
+    return apiUrl, group, project
 
 def main(argv):
     inputRepo = ''
     outputRepo = ''
     apiKey = ''
+    
     try:
         opts, args = getopt.getopt(argv, 'hi:o:k:')
     except:
-        PrintInfo()
+        PrintUsage()
         sys.exit(1)
     for opt, arg in opts:
         if opt == '-h':
-            PrintInfo()
+            PrintUsage()
             sys.exit()
         elif opt == '-i':
             inputRepo = arg
@@ -33,6 +47,8 @@ def main(argv):
     print(outputRepo)
     print(apiKey)
 
+    url, group, project = ParseGitlabRepo(outputRepo)
+
     with tempfile.TemporaryDirectory(prefix='svn2gitlab_') as tmpdirname:
         print(tmpdirname)
         os.chdir(tmpdirname)
@@ -41,14 +57,12 @@ def main(argv):
         checkoutCommand = 'svn checkout ' + inputRepo + ' .'
         checkout = subprocess.Popen(checkoutCommand, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         (output, err) = checkout.communicate()
-        # print(output)
-        # print(err)
         
         logCommand = r'''svn log --quiet | grep -E "r[0-9]+ \| .+ \|" | cut -d'|' -f2 | sed 's/ //g' | sort | uniq'''
         log = subprocess.Popen(logCommand, shell=True, stdout=subprocess.PIPE, text=True)
         (output, err) = log.communicate()
 
-        gl = gitlab.Gitlab('https://git.protei.ru', private_token=apiKey)
+        gl = gitlab.Gitlab(url, private_token=apiKey)
         gl.auth()
 
         os.chdir('..')
@@ -70,18 +84,10 @@ def main(argv):
         print(output)
         print(err)
 
-        # branchCommand = r''''''
+        group_id = gl.groups.get(group).id
+        gl.projects.create({'name': project, 'namespace_id': group_id})
 
-
-        # time.sleep(100000)
-        # group_id = gl.groups.list(search='NGN')[0].id
-        group_id = gl.groups.get('NGN').id
-        # print(group_id)
-        gl.projects.create({'name': 'I-SBC', 'namespace_id': group_id})
-        # projects = gl.projects.list(all=True)
-        # print(projects)
-
-        remoteAddCommand = r'''git remote add origin git@git.protei.ru:''' + '''NGN/''' + '''I-SBC'''
+        remoteAddCommand = r'''git remote add origin git@git.protei.ru:''' + group + '/' + project
         remoteAdd = subprocess.Popen(remoteAddCommand, shell=True)
         (output, err) = remoteAdd.communicate()
         print(output)
